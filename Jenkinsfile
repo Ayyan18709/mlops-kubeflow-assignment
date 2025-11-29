@@ -1,20 +1,22 @@
 pipeline {
-    agent {
-        docker {
-            image 'python:3.9'
-            args '-u root'
-        }
-    }
+    agent any
 
     stages {
         stage('Environment Setup') {
             steps {
-                echo 'Setting up environment...'
+                echo 'Checking Python environment...'
                 sh '''
                     python --version
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
+                    pip --version
+                    pip list | grep -E "(pandas|scikit-learn|mlflow|dvc)" || echo "Some packages may need installation"
                 '''
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                echo 'Installing/Updating dependencies...'
+                sh 'pip install -r requirements.txt'
             }
         }
 
@@ -28,9 +30,16 @@ pipeline {
         stage('Verify Artifacts') {
             steps {
                 echo 'Verifying artifacts...'
-                sh 'ls -lh models/ || echo "models directory not found"'
-                sh 'ls -lh metrics/ || echo "metrics directory not found"'
-                sh 'cat metrics/metrics.json || echo "metrics.json not found"'
+                sh '''
+                    echo "=== Models Directory ==="
+                    ls -lh models/ || echo "models directory not found"
+                    echo ""
+                    echo "=== Metrics Directory ==="
+                    ls -lh metrics/ || echo "metrics directory not found"
+                    echo ""
+                    echo "=== Metrics Content ==="
+                    cat metrics/metrics.json || echo "metrics.json not found"
+                '''
             }
         }
     }
@@ -40,10 +49,11 @@ pipeline {
             archiveArtifacts artifacts: 'models/*.pkl, metrics/*.json', allowEmptyArchive: true
         }
         success {
-            echo 'Pipeline completed successfully!'
+            echo '✅ Pipeline completed successfully!'
+            echo 'Artifacts have been archived.'
         }
         failure {
-            echo 'Pipeline failed. Check the logs above for details.'
+            echo '❌ Pipeline failed. Check the logs above for details.'
         }
     }
 }
