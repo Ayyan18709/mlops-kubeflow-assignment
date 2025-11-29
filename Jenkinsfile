@@ -5,26 +5,34 @@ pipeline {
         stage('Environment Setup') {
             steps {
                 echo 'Setting up environment...'
-                // Windows-compatible commands
-                bat 'python -m venv venv'
-                bat 'venv\\Scripts\\pip install -r requirements.txt'
+                // Create virtual environment
+                sh 'python3 -m venv venv || python -m venv venv'
+                // Install dependencies using venv pip
+                sh '''
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                '''
             }
         }
 
         stage('Pipeline Execution') {
             steps {
                 echo 'Running MLflow pipeline...'
-                // Use venv python directly
-                bat 'venv\\Scripts\\python main.py'
+                // Run pipeline with venv python
+                sh '''
+                    . venv/bin/activate
+                    python main.py
+                '''
             }
         }
         
         stage('Verify Artifacts') {
             steps {
                 echo 'Verifying artifacts...'
-                // Windows dir command instead of ls
-                bat 'dir models'
-                bat 'dir metrics'
+                sh 'ls -lh models/ || echo "models directory not found"'
+                sh 'ls -lh metrics/ || echo "metrics directory not found"'
+                sh 'cat metrics/metrics.json || echo "metrics.json not found"'
             }
         }
     }
@@ -37,7 +45,7 @@ pipeline {
             echo 'Pipeline completed successfully!'
         }
         failure {
-            echo 'Pipeline failed. Check the logs above.'
+            echo 'Pipeline failed. Check the logs above for details.'
         }
     }
 }
