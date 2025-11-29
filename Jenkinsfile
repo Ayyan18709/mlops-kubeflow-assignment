@@ -1,15 +1,17 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'python:3.9'
+            args '-u root'
+        }
+    }
 
     stages {
         stage('Environment Setup') {
             steps {
                 echo 'Setting up environment...'
-                // Create virtual environment
-                sh 'python3 -m venv venv || python -m venv venv'
-                // Install dependencies using venv pip
                 sh '''
-                    . venv/bin/activate
+                    python --version
                     pip install --upgrade pip
                     pip install -r requirements.txt
                 '''
@@ -19,11 +21,7 @@ pipeline {
         stage('Pipeline Execution') {
             steps {
                 echo 'Running MLflow pipeline...'
-                // Run pipeline with venv python
-                sh '''
-                    . venv/bin/activate
-                    python main.py
-                '''
+                sh 'python main.py'
             }
         }
         
