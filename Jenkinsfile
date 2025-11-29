@@ -5,25 +5,26 @@ pipeline {
         stage('Environment Setup') {
             steps {
                 echo 'Setting up environment...'
-                sh 'python3 -m venv venv'
-                sh '. venv/bin/activate'
-                sh 'pip install -r requirements.txt'
+                // Windows-compatible commands
+                bat 'python -m venv venv'
+                bat 'venv\\Scripts\\pip install -r requirements.txt'
             }
         }
 
         stage('Pipeline Execution') {
             steps {
                 echo 'Running MLflow pipeline...'
-                // Ensure environment is active
-                sh '. venv/bin/activate && python main.py'
+                // Use venv python directly
+                bat 'venv\\Scripts\\python main.py'
             }
         }
         
         stage('Verify Artifacts') {
             steps {
                 echo 'Verifying artifacts...'
-                sh 'ls -l models/'
-                sh 'ls -l metrics/'
+                // Windows dir command instead of ls
+                bat 'dir models'
+                bat 'dir metrics'
             }
         }
     }
@@ -31,6 +32,12 @@ pipeline {
     post {
         always {
             archiveArtifacts artifacts: 'models/*.pkl, metrics/*.json', allowEmptyArchive: true
+        }
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed. Check the logs above.'
         }
     }
 }
