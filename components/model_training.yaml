@@ -1,0 +1,101 @@
+# PIPELINE DEFINITION
+# Name: model-training
+# Inputs:
+#    n_estimators: int [Default: 100.0]
+#    train_csv: str
+# Outputs:
+#    model_pkl: str
+components:
+  comp-model-training:
+    executorLabel: exec-model-training
+    inputDefinitions:
+      parameters:
+        n_estimators:
+          defaultValue: 100.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        train_csv:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        model_pkl:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-model-training:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - model_training
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.15.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef model_training(train_csv: InputPath(str), \n                \
+          \   model_pkl: OutputPath(str),\n                   n_estimators: int =\
+          \ 100):\n    import pandas as pd\n    import joblib\n    from sklearn.ensemble\
+          \ import RandomForestRegressor\n\n    print(\"Loading training data...\"\
+          )\n    df = pd.read_csv(train_csv)\n    target_col = \"PRICE\"\n\n    X_train\
+          \ = df.drop(columns=[target_col])\n    y_train = df[target_col]\n\n    print(f\"\
+          Training Random Forest with n_estimators={n_estimators}...\")\n    model\
+          \ = RandomForestRegressor(n_estimators=n_estimators, random_state=42)\n\
+          \    model.fit(X_train, y_train)\n\n    print(\"Saving model...\")\n   \
+          \ # Ensure directory exists\n    import os\n    os.makedirs(os.path.dirname(model_pkl),\
+          \ exist_ok=True)\n    joblib.dump(model, model_pkl)\n\n"
+        image: python:3.9
+pipelineInfo:
+  name: model-training
+root:
+  dag:
+    outputs:
+      parameters:
+        model_pkl:
+          valueFromParameter:
+            outputParameterKey: model_pkl
+            producerSubtask: model-training
+    tasks:
+      model-training:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-model-training
+        inputs:
+          parameters:
+            n_estimators:
+              componentInputParameter: n_estimators
+            train_csv:
+              componentInputParameter: train_csv
+        taskInfo:
+          name: model-training
+  inputDefinitions:
+    parameters:
+      n_estimators:
+        defaultValue: 100.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      train_csv:
+        parameterType: STRING
+  outputDefinitions:
+    parameters:
+      model_pkl:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.15.1

@@ -1,0 +1,103 @@
+# PIPELINE DEFINITION
+# Name: model-evaluation
+# Inputs:
+#    model_pkl: str
+#    test_csv: str
+# Outputs:
+#    metrics_json: str
+components:
+  comp-model-evaluation:
+    executorLabel: exec-model-evaluation
+    inputDefinitions:
+      parameters:
+        model_pkl:
+          parameterType: STRING
+        test_csv:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        metrics_json:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-model-evaluation:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - model_evaluation
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.15.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef model_evaluation(model_pkl: InputPath(str),\n               \
+          \      test_csv: InputPath(str),\n                     metrics_json: OutputPath(str)):\n\
+          \    import pandas as pd\n    import joblib\n    import json\n    from sklearn.metrics\
+          \ import mean_squared_error, r2_score\n\n    print(\"Loading model and test\
+          \ data...\")\n    model = joblib.load(model_pkl)\n    df = pd.read_csv(test_csv)\n\
+          \    target_col = \"PRICE\"\n\n    X_test = df.drop(columns=[target_col])\n\
+          \    y_test = df[target_col]\n\n    print(\"Predicting...\")\n    y_pred\
+          \ = model.predict(X_test)\n\n    mse = mean_squared_error(y_test, y_pred)\n\
+          \    r2 = r2_score(y_test, y_pred)\n\n    print(f\"MSE: {mse}, R2: {r2}\"\
+          )\n\n    metrics = {\n        \"metrics\": [\n            {\n          \
+          \      \"name\": \"Mean Squared Error\",\n                \"numberValue\"\
+          : mse,\n                \"format\": \"RAW\",\n            },\n         \
+          \   {\n                \"name\": \"R2 Score\",\n                \"numberValue\"\
+          : r2,\n                \"format\": \"RAW\",\n            },\n        ]\n\
+          \    }\n\n    import os\n    os.makedirs(os.path.dirname(metrics_json),\
+          \ exist_ok=True)\n    with open(metrics_json, \"w\") as f:\n        json.dump(metrics,\
+          \ f)\n\n"
+        image: python:3.9
+pipelineInfo:
+  name: model-evaluation
+root:
+  dag:
+    outputs:
+      parameters:
+        metrics_json:
+          valueFromParameter:
+            outputParameterKey: metrics_json
+            producerSubtask: model-evaluation
+    tasks:
+      model-evaluation:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-model-evaluation
+        inputs:
+          parameters:
+            model_pkl:
+              componentInputParameter: model_pkl
+            test_csv:
+              componentInputParameter: test_csv
+        taskInfo:
+          name: model-evaluation
+  inputDefinitions:
+    parameters:
+      model_pkl:
+        parameterType: STRING
+      test_csv:
+        parameterType: STRING
+  outputDefinitions:
+    parameters:
+      metrics_json:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.15.1

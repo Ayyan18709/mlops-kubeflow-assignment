@@ -1,0 +1,89 @@
+# PIPELINE DEFINITION
+# Name: data-extraction
+# Inputs:
+#    dvc_remote_url: str
+# Outputs:
+#    output_csv: str
+components:
+  comp-data-extraction:
+    executorLabel: exec-data-extraction
+    inputDefinitions:
+      parameters:
+        dvc_remote_url:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        output_csv:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-data-extraction:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_extraction
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'dvc' 'dvc-s3'\
+          \ 'pandas'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.15.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_extraction(dvc_remote_url: str, output_csv: OutputPath(str)):\n\
+          \    import subprocess\n    import os\n\n    print(f\"Extracting data from\
+          \ {dvc_remote_url}\")\n    # Using dvc get to fetch data\n    # We assume\
+          \ we can access the repo.\n    # dvc get <repo> <path> -o <output>\n\n \
+          \   # We need to make sure the output directory exists? OutputPath handles\
+          \ the path.\n    # dvc get writes to a file or dir.\n\n    # If output_csv\
+          \ is a file path provided by KFP, we should use it.\n    # dvc get -o <output_csv>\n\
+          \n    cmd = [\"dvc\", \"get\", dvc_remote_url, \"data/raw_data.csv\", \"\
+          -o\", output_csv]\n    subprocess.run(cmd, check=True)\n\n    print(f\"\
+          Data extracted to {output_csv}\")\n\n"
+        image: python:3.9
+pipelineInfo:
+  name: data-extraction
+root:
+  dag:
+    outputs:
+      parameters:
+        output_csv:
+          valueFromParameter:
+            outputParameterKey: output_csv
+            producerSubtask: data-extraction
+    tasks:
+      data-extraction:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-data-extraction
+        inputs:
+          parameters:
+            dvc_remote_url:
+              componentInputParameter: dvc_remote_url
+        taskInfo:
+          name: data-extraction
+  inputDefinitions:
+    parameters:
+      dvc_remote_url:
+        parameterType: STRING
+  outputDefinitions:
+    parameters:
+      output_csv:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.15.1
